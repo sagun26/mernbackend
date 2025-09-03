@@ -10,8 +10,10 @@ const cors =require('cors');
 
 const app = express();
 app.use(cors({
-    origin: 'http://localhost:5173', // Adjust this to your frontend's URL 
-}))
+    origin: ['http://localhost:5173', 
+    "https://mernstackfrontend-plum.vercel.app/"
+    ],// Adjust this to your frontend's URL 
+}));
 app.use(express.json());
 ConnectToDatabase();
 
@@ -19,16 +21,19 @@ ConnectToDatabase();
 app.get("/", (req, res) => {
     res.status(200).json({ message: "success" });
 });
-
+const BASE_URL="https://mernbackend-fi9e.onrender.com"
 // Create book
 app.post("/book",upload.single('image'), async (req, res) => {
-    let fileName;
-    if(!req.file){
-       fileName="https://www.google.com/imgres?q=book%20cover&imgurl=https%3A%2F%2Fwww.designforwriters.com%2Fwp-content%2Fuploads%2F2017%2F10%2Fdesign-for-writers-book-cover-tf-2-a-million-to-one.jpg&imgrefurl=https%3A%2F%2Fwww.designforwriters.com%2Fbook-cover-design%2F&docid=5lDXrUyP8nyODM&tbnid=DpVKHmP3IWQHGM&vet=12ahUKEwieqqCjrNWOAxVxamwGHUriAVMQM3oECA0QAA..i&w=384&h=600&hcb=2&ved=2ahUKEwieqqCjrNWOAxVxamwGHUriAVMQM3oECA0QAA"
-    }
-    else{
-          fileName = "http://localhost:4000/" + req.file.filename;
-}
+//     let fileName;
+//     if(!req.file){
+//        fileName="https://www.google.com/imgres?q=book%20cover&imgurl=https%3A%2F%2Fwww.designforwriters.com%2Fwp-content%2Fuploads%2F2017%2F10%2Fdesign-for-writers-book-cover-tf-2-a-million-to-one.jpg&imgrefurl=https%3A%2F%2Fwww.designforwriters.com%2Fbook-cover-design%2F&docid=5lDXrUyP8nyODM&tbnid=DpVKHmP3IWQHGM&vet=12ahUKEwieqqCjrNWOAxVxamwGHUriAVMQM3oECA0QAA..i&w=384&h=600&hcb=2&ved=2ahUKEwieqqCjrNWOAxVxamwGHUriAVMQM3oECA0QAA"
+//     }
+//     else{
+//           fileName = "http://localhost:4000/" + req.file.filename;
+// }
+let fileName = req.file
+        ? `${BASE_URL}/${req.file.filename}`
+        : "https://cdn.vectorstock.com/i/preview-1x/77/30/default-avatar-profile-icon-grey-photo-placeholder-vector-17317730.jpg";
     const { bookPrice, bookName  } = req.body;
     try {
         const book = await Book.create({ bookName,
@@ -105,56 +110,46 @@ app.delete("/book/:id", async (req, res) => {
 //     });
 // });
 // Update book
-app.patch("/book/:id", upload.single("image"), async (req, res) => {
-  try {
-    const id = req.params.id;
-    const oldData = await Book.findById(id);
-    if (!oldData) {
-      return res.status(404).json({ message: "Book not found" });
+app.patch("/book/:id", upload.single('image'), async (req, res) => {
+    const id = req.params.id // kun book update garney id ho yo
+    const { bookName, bookPrice, authorName, publishedAt, publication, isbnNumber } = req.body
+    const oldDatas = await Book.findById(id)
+    if (!oldDatas) {
+        return res.status(404).json({ message: "Book not found" });
     }
 
-    let fileName = oldData.imageURL; // keep old one by default
+    let fileName = oldDatas.imageUrl;
 
-    // If new file is uploaded
     if (req.file) {
-      // delete old file if it was stored locally
-      if (oldData.imageURL && oldData.imageURL.startsWith("http://localhost:4000/")) {
-        const localHostUrlLength = "http://localhost:4000/".length;
-        const oldFilePath = oldData.imageURL.slice(localHostUrlLength);
-        fs.unlink(`storage/${oldFilePath}`, (err) => {
-          if (err) {
-            console.log("Error deleting old file:", err);
-          } else {
-            console.log("Old file deleted successfully");
-          }
-        });
-      }
+        // delete old file if it was not a placeholder image
+        if (oldDatas.imageUrl && oldDatas.imageUrl.startsWith(BASE_URL)) {
+            const oldImagePath = oldDatas.imageUrl.slice(BASE_URL.length + 1);
+            fs.unlink(`storage/${oldImagePath}`, (err) => {
+                if (err) console.log("Error deleting old file:", err);
+                else console.log("Old file deleted successfully");
+            });
+        }
 
-      fileName = "http://localhost:4000/" + req.file.filename;
+        // save new file path
+        fileName = `${BASE_URL}/${req.file.filename}`;
+
     }
 
-    // Build update object
-    const updateData = {
-      bookName: req.body.bookName,
-      bookPrice: req.body.bookPrice,
-      isbnNumber: req.body.isbnNumber,
-      authorName: req.body.authorName,
-      publication: req.body.publication,
-      publishedAt: req.body.publishedAt,
-      imageURL: fileName,
-    };
-
-    const updatedBook = await Book.findByIdAndUpdate(id, updateData, { new: true });
+    await Book.findByIdAndUpdate(id, {
+        bookName,
+        bookPrice,
+        authorName,
+        publication,
+        publishedAt,
+        isbnNumber,
+        imageUrl: fileName,   //  update image URL if changed
+    });
 
     res.status(200).json({
-      message: "Book Updated Successfully",
-      data: updatedBook,
+        message: "Book Updated Successfully"
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error updating book", error: error.message });
-  }
-});
+})
+    
 
 app.delete("/book/:id", async (req, res) => {
   const id = req.params.id;
@@ -170,9 +165,8 @@ app.delete("/book/:id", async (req, res) => {
 
     try {
       // Only delete local files, not placeholder/external URLs
-      if (book.imageURL && book.imageURL.startsWith("http://localhost:4000/")) {
-        const localHostUrlLength = "http://localhost:4000/".length;
-        const imagePath = book.imageURL.slice(localHostUrlLength);
+      if (book.imageURL && book.imageURL.startsWith(BASE_URL)) {
+        const imagePath = book.imageURL.slice(BASE_URL.length + 1);
 
         fs.unlink(`storage/${imagePath}`, (err) => {
           if (err) {
